@@ -1,6 +1,6 @@
 # multipart
 
-An RFC 7578 `multipart/form-data` parser for Clojure and the [Jolt](https://github.com/squint-cljs/jolt) (squint) dialect, ported from [defnull/multipart](https://github.com/defnull/multipart). It is designed to be used by [ring-core](https://github.com/ring-clojure/ring) to parse form uploads.
+An RFC 7578 `multipart/form-data` parser for Clojure and the [Jolt](https://github.com/squint-cljs/jolt) dialect, ported from [defnull/multipart](https://github.com/defnull/multipart). It is designed to be used by [ring-core](https://github.com/ring-clojure/ring) to parse form uploads.
 
 Both the incremental push parser and the high-level `parse-form-data` API are implemented, so you can either stream a request body chunk by chunk or parse it all at once.
 
