@@ -400,3 +400,26 @@
       (is (= 1 (count parts)))
       (is (= "foo" (:name (first parts))))
       (is (= "bar" (bstr (:bytes (first parts))))))))
+
+;; ring hands the request body as a java.io.InputStream. Both the multipart and
+;; the urlencoded branch have to take one, or the library cannot be used from the
+;; middleware it exists for.
+(deftest input-stream-body
+  (testing "multipart"
+    (let [body (str "--XXXX\r\n"
+                    "Content-Disposition: form-data; name=\"foo\"\r\n\r\n"
+                    "bar\r\n"
+                    "--XXXX\r\n"
+                    "Content-Disposition: form-data; name=\"f\"; filename=\"a.txt\"\r\n\r\n"
+                    "data\r\n"
+                    "--XXXX--")
+          req {:headers {"content-type" "multipart/form-data; boundary=XXXX"}
+               :body (java.io.ByteArrayInputStream. (ba body))}
+          {:keys [params files]} (m/parse-form-data req)]
+      (is (= {"foo" "bar"} params))
+      (is (= "a.txt" (:filename (get files "f"))))
+      (is (= "data" (bstr (:bytes (get files "f")))))))
+  (testing "urlencoded"
+    (let [req {:headers {"content-type" "application/x-www-form-urlencoded"}
+               :body (java.io.ByteArrayInputStream. (ba "a=1&b=two"))}]
+      (is (= {"a" "1" "b" "two"} (:params (m/parse-form-data req)))))))

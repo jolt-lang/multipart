@@ -74,6 +74,26 @@
             (conj parts current))
         parts))))
 
+;; ring hands the request body as a java.io.InputStream, and this library exists
+;; to be used by ring-core, so accept one wherever a body is taken. Wrapping it as
+;; a read-fn rather than slurping it keeps the streaming path: the parser asks for
+;; the chunk size it wants and the stream is read no further ahead than that.
+(defn- stream->read-fn [in]
+  (fn [size]
+    (let [buf (byte-array size)
+          n (.read in buf 0 size)]
+      (cond
+        (neg? n) nil
+        (= n size) buf
+        :else (bytes/ba-slice buf 0 n)))))
+
+(defn- coerce-body [body]
+  (if (instance? java.io.InputStream body) (stream->read-fn body) body))
+
+;; The urlencoded branch wants the whole body at once, so a stream is drained.
+(defn- urlencoded-body [body]
+  (if (instance? java.io.InputStream body) (.readAllBytes body) body))
+
 (defn parse-multipart
   "Parse a multipart/form-data body into a vector of part maps, each with
   :name, :filename, :content-type, :charset, :headerlist and :bytes keys.
@@ -90,7 +110,8 @@
   instead of raising."
   ([boundary body] (parse-multipart boundary body {}))
   ([boundary body {:keys [memory-limit check-complete] :or {check-complete true} :as opts}]
-   (let [p (apply parser/make-parser boundary (mapcat identity opts))]
+   (let [body (coerce-body body)
+         p (apply parser/make-parser boundary (mapcat identity opts))]
      (if (fn? body)
        (reduce-part-events (parser/parse-stream p body) memory-limit (not check-complete))
        (let [[p events] (parser/parse-chunk p body)]
@@ -201,7 +222,7 @@
                  (parse-multipart boundary (:body request) (dissoc opts :charset))))
 
              (contains? #{"application/x-www-form-urlencoded" "application/x-url-encoded"} ctype)
-             {:params (parse-urlencoded (:body request) charset opts) :files {}}
+             {:params (parse-urlencoded (urlencoded-body (:body request)) charset opts) :files {}}
 
              strict
              (throw (errors/strict-parser-error "Unsupported Content-Type"))
