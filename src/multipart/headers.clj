@@ -1,6 +1,7 @@
 (ns multipart.headers
   "RFC 7230/7578 header value parsing and quoting."
   (:require [clojure.string :as str]))
+
 (def known-headers
   #{"Content-Disposition" "Content-Type" "Content-Length" "Content-Range"})
 (def re-token #"[a-zA-Z0-9\-!#$%&'*+.^_`|~]+")
