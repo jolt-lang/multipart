@@ -9,15 +9,23 @@ Both the incremental push parser and the high-level `parse-form-data` API are im
 Add the git dependency to `deps.edn`:
 
 ```clojure
-{:deps {multipart/multipart
+{:deps {jolt-lang/multipart
         {:git/url "https://github.com/jolt-lang/multipart"
-         :git/sha "..."}}}
+         :git/tag "v0.1.0"
+         :git/sha "<the sha that tag points at>"}}}
 ```
 
-Replace the SHA with the current commit on the repository (or the `:git/tag` of a release). For local development, a `:local/root` path works too:
+A git coordinate needs the SHA as well as the tag; read it with
+
+```
+git ls-remote --tags https://github.com/jolt-lang/multipart
+```
+
+Tracking a commit directly works too — `:git/sha` on its own, no tag. For local
+development, a `:local/root` path:
 
 ```clojure
-{:deps {multipart/multipart {:local/root "../multipart"}}}
+{:deps {jolt-lang/multipart {:local/root "../multipart"}}}
 ```
 
 ## Quick start
@@ -25,7 +33,7 @@ Replace the SHA with the current commit on the repository (or the `:git/tag` of 
 ```clojure
 (require '[multipart.core :as multipart])
 
-;; ring-style request map; :body is a byte array or a read-fn
+;; ring-style request map; :body is a byte array, an InputStream or a read-fn
 (def request
   {:headers {"content-type" "multipart/form-data; boundary=boundary123"}
    :body    (byte-array (.getBytes (str "--boundary123\r\n"
@@ -58,7 +66,7 @@ Text fields come back decoded in `:params`; file uploads in `:files`, each a map
 
 `(parse-form-data request & [opts])` → `{:params {...} :files {...}}`
 
-Parses a ring-style request map (`:headers` with `"content-type"`, `:body` with a byte array or read-fn). Options:
+Parses a ring-style request map (`:headers` with `"content-type"`, `:body` with a byte array, a `java.io.InputStream` or a read-fn). Options:
 
 - `:charset` — default charset for headers and text fields (default `"utf-8"`)
 - `:strict` — raise on unusual or unsupported input
@@ -69,7 +77,14 @@ Parses a ring-style request map (`:headers` with `"content-type"`, `:body` with 
 
 `(parse-multipart boundary body & [opts])` → vector of part maps
 
-Parses a complete multipart body. `boundary` is the boundary string; `body` is either a byte array or a read-fn of a size argument returning byte arrays (`nil` at EOF). Each part map has `:name`, `:filename`, `:content-type`, `:charset`, `:headerlist` and `:bytes`.
+Parses a complete multipart body. `boundary` is the boundary string; `body` is a byte array, a `java.io.InputStream`, or a read-fn of a size argument returning byte arrays (`nil` at EOF). A stream is wrapped as a read-fn rather than slurped, so it is read no further ahead than the parser asks for. Each part map has `:name`, `:filename`, `:content-type`, `:charset`, `:headerlist` and `:bytes`.
+
+Options, in addition to `make-parser`'s:
+
+- `:memory-limit` — cap on the total payload bytes across all parts (`nil` = unlimited)
+- `:check-complete` — require the closing `--boundary--` delimiter (default `true`)
+
+RFC 7578 §4.1 requires that delimiter, so a body without one is malformed and the default rejects it. Some servers and clients truncate it, and some parsers accept that; `:check-complete false` returns the parts that did arrive complete instead of raising. A part whose body was fully received but whose terminator is missing is returned rather than dropped.
 
 ### Streaming parser
 
