@@ -138,4 +138,4 @@ clojure -M:test
 
 ## License
 
-MIT, same as the upstream Python library.
+Apache, Version 2.0
