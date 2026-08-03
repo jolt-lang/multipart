@@ -383,3 +383,20 @@
                       "--boundary--"))
         result (m/parse-form-data (make-request "multipart/form-data; boundary=boundary" body))]
     (is (= {"tag" ["a" "b"]} (:params result)))))
+
+;; RFC 7578 §4.1 requires the closing --boundary-- delimiter. A body that stops
+;; at the delimiter without it is malformed, and the default rejects it; some
+;; servers truncate it, and :check-complete false returns the parts that did
+;; arrive rather than raising. The part's body is complete either way — only the
+;; two bytes saying whether another part follows are missing — so dropping it
+;; silently would lose data the parser already has.
+(deftest truncated-final-delimiter
+  (let [body (ba (str "--XXXX\r\n"
+                           "Content-Disposition: form-data; name=\"foo\"\r\n\r\n"
+                           "bar\r\n"
+                           "--XXXX"))]
+    (is (thrown? Exception (m/parse-multipart "XXXX" body)))
+    (let [parts (m/parse-multipart "XXXX" body {:check-complete false})]
+      (is (= 1 (count parts)))
+      (is (= "foo" (:name (first parts))))
+      (is (= "bar" (bstr (:bytes (first parts))))))))

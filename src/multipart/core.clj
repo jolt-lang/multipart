@@ -44,7 +44,13 @@
                (if (vector? cur) (conj cur v) [cur v])
                v)))
 
-(defn- reduce-part-events [events memory-limit]
+(defn- reduce-part-events
+  "Fold parser events into part maps. flush-pending? closes a part still open
+  when the events run out — which happens when the stream ended after that
+  part's closing delimiter but before the two bytes that say whether another
+  part follows. Its body is complete; only the terminator is missing. Strict
+  parsing never reaches that case, because close-parser raises first."
+  [events memory-limit flush-pending?]
   (loop [events (seq events)
          current nil
          parts []
@@ -62,7 +68,11 @@
                  (recur (next events) nil
                         (conj parts current)
                         (+ total (alength (:bytes current)))))))
-      parts)))
+      (if (and flush-pending? current)
+        (do (when (and memory-limit (> (+ total (alength (:bytes current))) memory-limit))
+              (throw (errors/parser-limit-reached "Memory limit reached")))
+            (conj parts current))
+        parts))))
 
 (defn parse-multipart
   "Parse a multipart/form-data body into a vector of part maps, each with
@@ -71,15 +81,21 @@
   body is either a byte array holding the complete body, or a read-fn of
   a size argument returning byte arrays (nil at EOF) for streaming input.
   Options are the same as for `make-parser`, plus :memory-limit (nil =
-  unlimited) capping the total payload bytes across all parts."
+  unlimited) capping the total payload bytes across all parts, and
+  :check-complete (default true) requiring the closing --boundary-- delimiter.
+
+  RFC 7578 §4.1 requires that delimiter, so a body without one is malformed and
+  the default rejects it. Some servers and clients truncate it, and some parsers
+  accept that; :check-complete false returns the parts that did arrive complete
+  instead of raising."
   ([boundary body] (parse-multipart boundary body {}))
-  ([boundary body {:keys [memory-limit] :as opts}]
+  ([boundary body {:keys [memory-limit check-complete] :or {check-complete true} :as opts}]
    (let [p (apply parser/make-parser boundary (mapcat identity opts))]
      (if (fn? body)
-       (reduce-part-events (parser/parse-stream p body) memory-limit)
+       (reduce-part-events (parser/parse-stream p body) memory-limit (not check-complete))
        (let [[p events] (parser/parse-chunk p body)]
-         (parser/close-parser p)
-         (reduce-part-events events memory-limit))))))
+         (parser/close-parser p check-complete)
+         (reduce-part-events events memory-limit (not check-complete)))))))
 
 (defn is-form-request?
   "True if content-type represents a form request that can be parsed with
