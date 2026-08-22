@@ -10,7 +10,7 @@ Add the git dependency to `deps.edn`:
 
 ```clojure
 {:deps {jolt-lang/multipart
-        {:git/url "https://github.com/jolt-lang/multipart"
+        {:git/url "https://github.com/yogthos/multipart"
          :git/tag "v0.1.0"
          :git/sha "<the sha that tag points at>"}}}
 ```
