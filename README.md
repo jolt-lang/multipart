@@ -1,6 +1,6 @@
 # multipart
 
-An RFC 7578 `multipart/form-data` parser for Clojure and the [Jolt](https://github.com/squint-cljs/jolt) dialect, ported from [defnull/multipart](https://github.com/defnull/multipart). It is designed to be used by [ring-core](https://github.com/ring-clojure/ring) to parse form uploads.
+An RFC 7578 `multipart/form-data` parser for Clojure and the [Jolt](https://github.com/jolt-lang/jolt) dialect, ported from [defnull/multipart](https://github.com/defnull/multipart). [ring-chez-adapter](https://github.com/jolt-lang/ring-chez-adapter) uses it for its multipart middleware, and [http-client](https://github.com/jolt-lang/http-client) tests the bodies it builds against it.
 
 Both the incremental push parser and the high-level `parse-form-data` API are implemented, so you can either stream a request body chunk by chunk or parse it all at once.
 
@@ -10,8 +10,8 @@ Add the git dependency to `deps.edn`:
 
 ```clojure
 {:deps {jolt-lang/multipart
-        {:git/url "https://github.com/yogthos/multipart"
-         :git/tag "v0.1.0"
+        {:git/url "https://github.com/jolt-lang/multipart"
+         :git/tag "v0.1.1"
          :git/sha "<the sha that tag points at>"}}}
 ```
 
@@ -133,7 +133,7 @@ Parser failures throw `ex-info` with a `:type` key in `ex-data`; test for them w
 ## Running the tests
 
 ```
-clojure -M:test
+jolt -M:test      # or: clojure -M:test
 ```
 
 ## License
