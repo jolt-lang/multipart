@@ -17,8 +17,7 @@
             [multipart.parser :as parser]
             [multipart.errors :as errors]))
 
-;; Re-exports: callers can require just multipart.core, as before the
-;; refactor into sub-namespaces.
+;; Re-exports, so requiring this namespace alone gives the whole parser API.
 (def make-parser parser/make-parser)
 (def close-parser parser/close-parser)
 (def parse-chunk parser/parse-chunk)
