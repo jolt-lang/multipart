@@ -44,16 +44,42 @@
         (recur (dec j))
         false))))
 
+(defn kmp-table
+  "Knuth-Morris-Pratt fallback table for pat: entry k is the length of the
+  longest proper prefix of pat[0..k] that is also its suffix."
+  ^ints [^bytes pat]
+  (let [m (alength pat)
+        t (int-array (max 1 m))]
+    (loop [i 1 k 0]
+      (when (< i m)
+        (let [b (aget pat i)]
+          (cond
+            (= b (aget pat k)) (do (aset t i (inc k)) (recur (inc i) (inc k)))
+            (pos? k) (recur i (aget t (dec k)))
+            :else (do (aset t i 0) (recur (inc i) 0))))))
+    t))
+
 (defn ba-index-of
-  "Index of the first occurrence of pat in ba at or after from; nil if absent."
-  [^bytes ba ^bytes pat from]
-  (let [n (alength ba) m (alength pat)]
-    (when (<= m (- n from))
-      (loop [i from]
-        (when (<= i (- n m))
-          (if (ba-eq-at? ba pat i)
-            i
-            (recur (inc i))))))))
+  "Index of the first occurrence of pat in ba at or after from; nil if absent.
+
+  Linear in the bytes searched (Knuth-Morris-Pratt), whatever the input: a
+  naive search compares up to (alength pat) bytes per position, which a
+  crafted body exploits against a long boundary. Pass table, from
+  `kmp-table`, to reuse it across searches for the same pat."
+  ([^bytes ba ^bytes pat from] (ba-index-of ba pat from nil))
+  ([^bytes ba ^bytes pat from table]
+   (let [n (alength ba) m (alength pat)]
+     (when (<= m (- n from))
+       (if (zero? m)
+         from
+         (let [^ints t (or table (kmp-table pat))]
+           (loop [i from k 0]
+             (cond
+               (= k m) (- i m)
+               (>= i n) nil
+               (= (aget ba i) (aget pat k)) (recur (inc i) (inc k))
+               (pos? k) (recur i (aget t (dec k)))
+               :else (recur (inc i) 0)))))))))
 
 (defn ba-rindex-of
   "Index of the last occurrence of pat in ba at or after from; nil if absent."

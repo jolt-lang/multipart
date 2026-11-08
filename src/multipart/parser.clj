@@ -1,7 +1,7 @@
 (ns multipart.parser
   "Incremental SansIO multipart parser (port of PushMultipartParser)."
   (:require [clojure.string :as str]
-            [multipart.bytes :refer [ba= ba-concat ba-slice ba-eq-at? ba-index-of
+            [multipart.bytes :refer [ba= ba-concat ba-slice ba-eq-at? ba-index-of kmp-table
                                      ba-rindex-of ba-starts-with? str->ba ba->str
                                      title-case is-valid-charset? utf8-valid?
                                      crlf cr-byte lf-byte dbl-dash]]
@@ -61,25 +61,29 @@
       (throw (strict-parser-error "Boundary too long")))
     (when-not (is-valid-charset? header-charset)
       (throw (parser-error (str "Invalid charset: " (pr-str header-charset)))))
-    {:boundary boundary
-     :delimiter (ba-concat crlf dbl-dash boundary)
-     :first-delim (ba-concat dbl-dash boundary)
-     :content-length content-length
-     :max-header-size max-header-size
-     :max-header-count max-header-count
-     :max-segment-size max-segment-size
-     :max-segment-count max-segment-count
-     :header-charset header-charset
-     :strict strict
-     :state :preamble
-     :buffer (byte-array 0)
-     :parsed 0
-     :segment nil
-     :segment-headerlist []
-     :segment-limit -1
-     :segment-count 0
-     :error nil
-     :closed false}))
+    (let [delimiter (ba-concat crlf dbl-dash boundary)
+          first-delim (ba-concat dbl-dash boundary)]
+      {:boundary boundary
+       :delimiter delimiter
+       :delimiter-table (kmp-table delimiter)
+       :first-delim first-delim
+       :first-delim-table (kmp-table first-delim)
+       :content-length content-length
+       :max-header-size max-header-size
+       :max-header-count max-header-count
+       :max-segment-size max-segment-size
+       :max-segment-count max-segment-count
+       :header-charset header-charset
+       :strict strict
+       :state :preamble
+       :buffer (byte-array 0)
+       :parsed 0
+       :segment nil
+       :segment-headerlist []
+       :segment-limit -1
+       :segment-count 0
+       :error nil
+       :closed false})))
 
 (defn- on-segment-start [state]
   (let [count (inc (:segment-count state))]
@@ -187,7 +191,7 @@
           :preamble
           (if (< bufferlen d-len)
             [state offset events]
-            (let [idx (ba-index-of buffer (:first-delim state) offset)]
+            (let [idx (ba-index-of buffer (:first-delim state) offset (:first-delim-table state))]
               (if idx
                 (do
                   (when (and (pos? idx)
@@ -239,7 +243,7 @@
                 [state offset events])))
 
           :body
-          (let [idx (ba-index-of buffer delimiter offset)]
+          (let [idx (ba-index-of buffer delimiter offset (:delimiter-table state))]
             (if idx
               (let [[state events] (if (> idx offset)
                                      (let [chunk (ba-slice buffer offset idx)]
