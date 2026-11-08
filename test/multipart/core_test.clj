@@ -1,6 +1,7 @@
 (ns multipart.core-test
   (:require [clojure.test :refer [deftest is testing]]
             [clojure.string :as str]
+            [multipart.bytes :as bytes]
             [multipart.core :as m]))
 
 (defn- ba [s] (.getBytes ^String s "UTF-8"))
@@ -423,3 +424,50 @@
     (let [req {:headers {"content-type" "application/x-www-form-urlencoded"}
                :body (java.io.ByteArrayInputStream. (ba "a=1&b=two"))}]
       (is (= {"a" "1" "b" "two"} (:params (m/parse-form-data req)))))))
+
+(defn- naive-index-of [^bytes hay ^bytes pat from]
+  (let [n (alength hay) m (alength pat)]
+    (loop [i from]
+      (when (<= i (- n m))
+        (if (every? (fn [j] (= (aget hay (+ i j)) (aget pat j))) (range m))
+          i
+          (recur (inc i)))))))
+
+(deftest index-of-agrees-with-naive-search
+  ;; Small alphabets and self-overlapping patterns exercise the fallback
+  ;; table, which is where a linear search can go wrong.
+  (let [rnd (java.util.Random. 7)
+        rand-ba (fn [n alphabet]
+                  (let [a (byte-array n)]
+                    (dotimes [i n] (aset a i (byte (nth alphabet (.nextInt rnd (count alphabet))))))
+                    a))]
+    (doseq [pat ["a" "ab" "aab" "abab" "aaaa" "abaabab" "\r\n--aaaa"]]
+      (let [pat (ba pat)]
+        (dotimes [_ 200]
+          (let [hay (rand-ba (.nextInt rnd 40) [97 98 13 10 45])
+                from (.nextInt rnd (inc (alength hay)))]
+            (is (= (naive-index-of hay pat from) (bytes/ba-index-of hay pat from))
+                (str "hay=" (pr-str (bstr hay)) " pat=" (pr-str (bstr pat)) " from=" from))))))))
+
+(deftest boundary-of-repeated-bytes-in-a-body-of-the-same-byte
+  ;; A 70-byte boundary of one letter and a body made of that letter, with
+  ;; near-miss delimiters in it: the input that made the naive search
+  ;; compare up to 70 bytes per position.
+  (let [boundary (apply str (repeat 70 "a"))
+        near-miss (str "\r\n--" (apply str (repeat 69 "a")) "b")
+        payload (str (apply str (repeat 20000 "a")) near-miss
+                     (apply str (repeat 20000 "a")) near-miss "\r\n--a")
+        body (ba (str "--" boundary "\r\n"
+                      "Content-Disposition: form-data; name=\"f\"; filename=\"x\"\r\n\r\n"
+                      payload "\r\n--" boundary "--\r\n"))
+        payload-of (fn [events]
+                     (bstr (apply bytes/ba-concat
+                                  (keep (fn [[k v]] (when (= k :body) v)) events))))]
+    (testing "fed whole"
+      (let [events (parse-events boundary body)]
+        (is (= 1 (count (filter (fn [[k]] (= k :segment)) events))))
+        (is (= payload (payload-of events)))))
+    (testing "fed in chunks that split the near misses"
+      (doseq [n [7 69 70 71 4096]]
+        (let [events (chunked boundary body n)]
+          (is (= payload (payload-of events)) (str "chunk size " n)))))))
