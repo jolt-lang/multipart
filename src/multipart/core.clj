@@ -43,6 +43,13 @@
                (if (vector? cur) (conj cur v) [cur v])
                v)))
 
+(defn- finish-part
+  "The segment a part map starts from is the one the parser emitted when the
+  part's headers ended, so its :bytes-received and :complete describe a part
+  with no body yet. Bring them up to date once the body is in."
+  [part]
+  (assoc part :bytes-received (alength (:bytes part)) :complete true))
+
 (defn- reduce-part-events
   "Fold parser events into part maps. flush-pending? closes a part still open
   when the events run out — which happens when the stream ended after that
@@ -65,12 +72,12 @@
                  (when (and memory-limit (> (+ total (alength (:bytes current))) memory-limit))
                    (throw (errors/parser-limit-reached "Memory limit reached")))
                  (recur (next events) nil
-                        (conj parts current)
+                        (conj parts (finish-part current))
                         (+ total (alength (:bytes current)))))))
       (if (and flush-pending? current)
         (do (when (and memory-limit (> (+ total (alength (:bytes current))) memory-limit))
               (throw (errors/parser-limit-reached "Memory limit reached")))
-            (conj parts current))
+            (conj parts (finish-part current)))
         parts))))
 
 ;; ring hands the request body as a java.io.InputStream, and this library exists
