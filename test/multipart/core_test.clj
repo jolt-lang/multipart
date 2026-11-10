@@ -471,3 +471,37 @@
       (doseq [n [7 69 70 71 4096]]
         (let [events (chunked boundary body n)]
           (is (= payload (payload-of events)) (str "chunk size " n)))))))
+
+;; The part maps are built from the segment the parser emits when a part's
+;; headers end, before any body arrives. A part that reached its closing
+;; delimiter is complete, and :bytes-received has to agree with :bytes.
+(deftest parts-report-received-and-complete
+  (let [body (ba (str "--boundary\r\n"
+                      "Content-Disposition: form-data; name=\"user\"\r\n\r\n"
+                      "alice\r\n"
+                      "--boundary\r\n"
+                      "Content-Disposition: form-data; name=\"file\"; filename=\"a.txt\"\r\n\r\n"
+                      "file contents\r\n"
+                      "--boundary--"))]
+    (testing "parse-multipart"
+      (let [[f1 f2] (m/parse-multipart "boundary" body)]
+        (is (= [5 true] [(:bytes-received f1) (:complete f1)]))
+        (is (= [13 true] [(:bytes-received f2) (:complete f2)]))))
+    (testing "streaming in small chunks"
+      (let [src (java.io.ByteArrayInputStream. body)
+            read-fn (fn [n] (let [b (byte-array (min n 3)) k (.read src b 0 (alength b))]
+                              (when (pos? k) (java.util.Arrays/copyOfRange b 0 k))))
+            [f1 f2] (m/parse-multipart "boundary" read-fn)]
+        (is (= [5 true] [(:bytes-received f1) (:complete f1)]))
+        (is (= [13 true] [(:bytes-received f2) (:complete f2)]))))
+    (testing "parse-form-data files"
+      (let [f (get-in (m/parse-form-data (make-request "multipart/form-data; boundary=boundary" body))
+                      [:files "file"])]
+        (is (= [13 true] [(:bytes-received f) (:complete f)]))))
+    (testing "a part flushed by :check-complete false"
+      (let [[p] (m/parse-multipart "boundary"
+                                   (ba (str "--boundary\r\n"
+                                            "Content-Disposition: form-data; name=\"x\"\r\n\r\n"
+                                            "bar\r\n--boundary"))
+                                   {:check-complete false})]
+        (is (= [3 true] [(:bytes-received p) (:complete p)]))))))
